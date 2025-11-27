@@ -24,7 +24,18 @@ def _get_custom_dataset(
     processor: Optional["ProcessorMixin"] = None,
     **kwargs,
 ) -> "Dataset":
-    if "gsm8k" in path and type == "sft":
+
+    if "parquet" in path.lower() and type == "rl":
+        from .deepscaler import get_parquet_rl_dataset
+
+        return get_parquet_rl_dataset(
+            path=path,
+            split=split,
+            tokenizer=tokenizer,
+            max_length=max_length,
+            **kwargs,
+        )
+    elif "gsm8k" in path and type == "sft":
         from .gsm8k import get_gsm8k_sft_dataset
 
         return get_gsm8k_sft_dataset(

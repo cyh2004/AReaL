@@ -444,6 +444,9 @@ def split_padded_tensor_dict_into_mb_list(
         .cpu()
         .numpy()
     )
+    
+    # from remote_pdb import RemotePdb
+    # RemotePdb("127.0.0.1", 4444+dist.get_rank()).set_trace()
 
     # check for multimodal input data
     multimodal_keys = {key for key in data if is_multi_modal_key(key)}

@@ -2,6 +2,8 @@ import getpass
 import os
 import time
 from dataclasses import asdict
+from datetime import datetime
+import pytz
 
 import swanlab
 import torch.distributed as dist
@@ -18,7 +20,7 @@ logger = logging.getLogger("StatsLogger", "system")
 
 
 class StatsLogger:
-    def __init__(self, config: BaseExperimentConfig, ft_spec: FinetuneSpec):
+    def __init__(self, config: BaseExperimentConfig, ft_spec: FinetuneSpec, addrs):
         if isinstance(config, StatsLoggerConfig):
             raise ValueError(
                 "Passing config.stats_logger as the config is deprecated. "
@@ -27,18 +29,18 @@ class StatsLogger:
         self.exp_config = config
         self.config = config.stats_logger
         self.ft_spec = ft_spec
-        self.init()
+        self.init(addrs)
 
         self._last_commit_step = 0
 
-    def init(self):
+    def init(self, addrs):
         if dist.is_initialized() and dist.get_rank() != 0:
             return
 
         if self.config.wandb.wandb_base_url:
-            os.environ["WANDB_API_KEY"] = self.config.wandb.wandb_api_key
-        if self.config.wandb.wandb_api_key:
             os.environ["WANDB_BASE_URL"] = self.config.wandb.wandb_base_url
+        if self.config.wandb.wandb_api_key:
+            os.environ["WANDB_API_KEY"] = self.config.wandb.wandb_api_key
 
         self.start_time = time.perf_counter()
         # wandb init, connect to remote wandb host
@@ -56,15 +58,35 @@ class StatsLogger:
             "is_dirty": version_info.is_dirty,
             "version": version_info.full_version_with_dirty_description,
         }
-
+        
+        if self.config.wandb.mode != "disabled":
+            addrs_str = ",".join(addrs)
+            logger.info(f"Forward SGLang metrics at {addrs_str} to WandB.")
+            settings = wandb.Settings(
+                mode="shared", 
+                x_primary=True,
+                x_stats_open_metrics_endpoints={
+                    f"sgl_engine_{i}": f"http://{addr}/metrics" for i, addr in enumerate(addrs)
+                },
+                x_stats_open_metrics_filters={
+                    f"sgl_engine_*": {}
+                },
+            )
+        else:
+            settings = wandb.Settings(mode="offline")
+        
+        now_time = datetime.now(pytz.timezone('Asia/Shanghai')).strftime("%H:%M:%S")
+        name = self.config.wandb.name or self.config.trial_name
+        name = name + "_" + now_time
+        
         wandb.init(
             mode=self.config.wandb.mode,
             entity=self.config.wandb.entity,
             project=self.config.wandb.project or self.config.experiment_name,
             name=self.config.wandb.name or self.config.trial_name,
             job_type=self.config.wandb.job_type,
-            group=self.config.wandb.group
-            or f"{self.config.experiment_name}_{self.config.trial_name}",
+            group=self.config.wandb.group or f"{self.config.experiment_name}_{self.config.trial_name}",
+            # group=name,
             notes=self.config.wandb.notes,
             tags=self.config.wandb.tags,
             config=exp_config_dict,  # save all experiment config to wandb
@@ -72,6 +94,7 @@ class StatsLogger:
             force=True,
             id=f"{self.config.experiment_name}_{self.config.trial_name}_{suffix}",
             resume="allow",
+            settings=settings
         )
 
         swanlab_config = self.config.swanlab

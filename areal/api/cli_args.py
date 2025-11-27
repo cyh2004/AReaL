@@ -894,6 +894,16 @@ class SGLangConfig:
     # and passed as `model_loader_extra_config` to SGLang.
     enable_multithread_load: bool = False
     enable_fast_load: bool = False
+    speculative_algorithm: str | None = None
+    speculative_draft_model_path: str | None = None
+    speculative_num_steps: int | None = None
+    speculative_eagle_topk: int | None = None
+    speculative_num_draft_tokens: int | None = None
+    speculative_ngram_min_match_window_size: int = 1
+    speculative_ngram_max_match_window_size: int = 12
+    speculative_ngram_min_bfs_breadth: int = 1
+    speculative_ngram_max_bfs_breadth: int = 10
+    speculative_ngram_branch_length: int = 18
 
     # Use staticmethod to make OmegaConf happy.
     @staticmethod

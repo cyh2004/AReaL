@@ -1,0 +1,1 @@
+python3 -m areal.launcher.local examples/math/deepscaler_grpo_trainer.py --config examples/math/deepscaler_grpo.yaml 2>&1 | tee deepscaler_grpo.log

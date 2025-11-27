@@ -1,0 +1,1 @@
+python3 -m areal.launcher.local examples/math/gsm8k_grpo.py --config examples/math/gsm8k_grpo.yaml 2>&1 | tee gsm8k_grpo.log

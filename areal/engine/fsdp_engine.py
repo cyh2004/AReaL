@@ -739,6 +739,7 @@ class FSDPEngine(TrainEngine):
         assert total_loss_weight != 0
         dist.all_reduce(total_loss_weight, group=self.dp_group)
 
+        print("len(mb_list.mbs): ", len(mb_list.mbs))
         # Process microbatches with gradient accumulation
         for pad_length, padded_mb_input, mb_input in zip(
             mb_list.padding_lengths, mb_list.padded_mbs, mb_list.mbs
@@ -785,6 +786,9 @@ class FSDPEngine(TrainEngine):
 
             with trace_scope("fsdp_engine.train_batch.forward"):
                 outputs = self.model(**inputs)
+                
+            if dist.get_rank() == 0:
+                print("shape: ", inputs["input_ids"].shape)
 
             output = outputs.logits.squeeze(0)
             if not self.config.is_critic:

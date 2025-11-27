@@ -1,4 +1,4 @@
-experiment_name: gsm8k-grpo
+experiment_name: deepscaler-grpo-megatron
 trial_name: trial0
 
 seed: 1
@@ -8,13 +8,13 @@ tokenizer_path: ${actor.path}
 
 cluster:
   n_nodes: 1
-  n_gpus_per_node: 4
+  n_gpus_per_node: 8
   fileroot: /tmp/areal/experiments
   name_resolve:
     type: nfs
     nfs_record_root: /tmp/areal/name_resolve
 
-allocation_mode: sglang:d2p1t1+fsdp:d2p1t1
+allocation_mode: sglang:d4p1t1+megatron:d1p1t4
 
 rollout:
   experiment_name: ${experiment_name}
@@ -26,7 +26,7 @@ rollout:
   enable_rollout_tracing: false
 
 gconfig:
-  n_samples: 4
+  n_samples: 8
   min_new_tokens: 0
   max_new_tokens: 15360
   greedy: false
@@ -41,8 +41,8 @@ actor:
   gradient_checkpointing: false
   dtype: bfloat16
   mb_spec:
-    # max_tokens_per_mb: 10240
     n_mbs: 1
+    max_tokens_per_mb: 4096
   optimizer:
     type: adam
     lr: 1.70e-5
@@ -53,16 +53,16 @@ actor:
     lr_scheduler_type: constant
     gradient_clipping: 1.0
     warmup_steps_proportion: 0.001
-    offload: false
+    offload: true
   fsdp:
-    offload_params: false
+    offload_params: true
   group_size: ${gconfig.n_samples}
   eps_clip: 0.4
   temperature: ${gconfig.temperature}
   reward_scaling: 10.0
   reward_bias: -0.5
   kl_ctl: 0.0
-  ppo_n_minibatches: 4
+  ppo_n_minibatches: 1
   recompute_logprob: true
   use_decoupled_loss: true
   behav_imp_weight_cap: 5.0
@@ -84,7 +84,8 @@ ref:
   disable_dropout: true
   dtype: ${actor.dtype}
   mb_spec:
-    max_tokens_per_mb: 10240
+    n_mbs: 1
+    max_tokens_per_mb: 4096
   optimizer: null
 
 # SGLang
@@ -96,30 +97,27 @@ sglang:
   max_running_requests: null
   context_length: 32768
   mem_fraction_static: 0.8
-
-vllm:
-  model: ${actor.path}
-  seed: ${seed}
-  skip_tokenizer_init: false
-  dtype: ${actor.dtype}
-  max_model_len: 32768
-  gpu_memory_utilization: 0.9
+  decode_log_interval: 10
+  attention_backend: flashinfer
+  disable_cuda_graph: true
 
 # datasets
 train_dataset:
-  batch_size: 2
+  batch_size: 256
   shuffle: true
   pin_memory: true
   num_workers: 4
-  path: /home/test/test14/cyh/datasets/gsm8k
+  path: /home/test/testdata/hbx/data/DeepScaler/train.parquet
+  # path: /home/test/test14/cyh/datasets/gsm8k
   type: rl
   max_length: 1024
 
 valid_dataset:
   batch_size: 256
+  shuffle: true
   pin_memory: true
   num_workers: 4
-  path: /home/test/test14/cyh/datasets/gsm8k
+  path: /home/test/testdata/hbx/data/AIME24/test.parquet
   type: rl
 
 # Utilities
@@ -153,12 +151,17 @@ stats_logger:
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
   wandb:
-    mode: disabled
-  swanlab:
-    mode: cloud
+    mode: online
+    wandb_api_key: key
+    group: areal-test
     project: areal-test
-    name: grpo-gsm8k
-    api_key: jjp8zXPygpoG5cdOv0waN
+    name: ${experiment_name}
+    id_suffix: timestamp
+  swanlab:
+    mode: disabled
+    project: areal-test
+    name: ${experiment_name}
+    api_key: key
 
 launcher:
   inference_server_cpus_per_gpu: 4

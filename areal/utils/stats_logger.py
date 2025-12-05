@@ -2,8 +2,6 @@ import getpass
 import os
 import time
 from dataclasses import asdict
-from datetime import datetime
-import pytz
 
 import swanlab
 import torch.distributed as dist
@@ -29,7 +27,11 @@ class StatsLogger:
         self.exp_config = config
         self.config = config.stats_logger
         self.ft_spec = ft_spec
+        self.run_id = None
         self.init(addrs)
+        
+        dist.barrier()
+        self.init_secondary(addrs)
 
         self._last_commit_step = 0
 
@@ -62,11 +64,14 @@ class StatsLogger:
         if self.config.wandb.mode != "disabled":
             addrs_str = ",".join(addrs)
             logger.info(f"Forward SGLang metrics at {addrs_str} to WandB.")
+            rank = dist.get_rank()
+            addr = addrs[rank]
             settings = wandb.Settings(
                 mode="shared", 
                 x_primary=True,
+                x_label=f"rank_{rank}",
                 x_stats_open_metrics_endpoints={
-                    f"sgl_engine_{i}": f"http://{addr}/metrics" for i, addr in enumerate(addrs)
+                    f"sgl_engine": f"http://{addr}/metrics"
                 },
                 x_stats_open_metrics_filters={
                     f"sgl_engine_*": {}
@@ -75,11 +80,7 @@ class StatsLogger:
         else:
             settings = wandb.Settings(mode="offline")
         
-        now_time = datetime.now(pytz.timezone('Asia/Shanghai')).strftime("%H:%M:%S")
-        name = self.config.wandb.name or self.config.trial_name
-        name = name + "_" + now_time
-        
-        wandb.init(
+        run = wandb.init(
             mode=self.config.wandb.mode,
             entity=self.config.wandb.entity,
             project=self.config.wandb.project or self.config.experiment_name,
@@ -96,6 +97,8 @@ class StatsLogger:
             resume="allow",
             settings=settings
         )
+        
+        self.run_id = run.id
 
         swanlab_config = self.config.swanlab
         if swanlab_config.mode != "disabled":
@@ -117,6 +120,69 @@ class StatsLogger:
         self.summary_writer = None
         if self.config.tensorboard.path is not None:
             self.summary_writer = SummaryWriter(log_dir=self.config.tensorboard.path)
+            
+    def init_secondary(self, addrs):
+        objects = [self.run_id]
+        dist.broadcast_object_list(objects, src=0)
+        run_id = objects[0]
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            return
+
+        if self.config.wandb.wandb_base_url:
+            os.environ["WANDB_BASE_URL"] = self.config.wandb.wandb_base_url
+        if self.config.wandb.wandb_api_key:
+            os.environ["WANDB_API_KEY"] = self.config.wandb.wandb_api_key
+
+        self.start_time = time.perf_counter()
+        # wandb init, connect to remote wandb host
+        if self.config.wandb.mode != "disabled":
+            wandb.login()
+
+        exp_config_dict = asdict(self.exp_config)
+        exp_config_dict["version_info"] = {
+            "commit_id": version_info.commit,
+            "branch": version_info.branch,
+            "is_dirty": version_info.is_dirty,
+            "version": version_info.full_version_with_dirty_description,
+        }
+        
+        if self.config.wandb.mode != "disabled":
+            addrs_str = ",".join(addrs)
+            rank = dist.get_rank()
+            addr = addrs[rank]
+            logger.info(f"[RANK {rank}] Forward SGLang metrics at {addr} to WandB.")
+            settings = wandb.Settings(
+                mode="shared", 
+                x_primary=False,
+                x_update_finish_state=False,
+                x_label=f"rank_{dist.get_rank()}",
+                x_stats_open_metrics_endpoints={
+                    f"sgl_engine": f"http://{addr}/metrics"
+                },
+                x_stats_open_metrics_filters={
+                    f"sgl_engine_*": {}
+                },
+            )
+        else:
+            settings = wandb.Settings(mode="offline")
+        
+        wandb.init(
+            id=run_id,
+            mode=self.config.wandb.mode,
+            entity=self.config.wandb.entity,
+            project=self.config.wandb.project or self.config.experiment_name,
+            name=self.config.wandb.name or self.config.trial_name,
+            job_type=self.config.wandb.job_type,
+            group=self.config.wandb.group or f"{self.config.experiment_name}_{self.config.trial_name}",
+            # group=name,
+            notes=self.config.wandb.notes,
+            tags=self.config.wandb.tags,
+            config=exp_config_dict,  # save all experiment config to wandb
+            dir=self.get_log_path(self.config),
+            force=True,
+            resume="allow",
+            settings=settings
+        )
 
     def state_dict(self):
         return {

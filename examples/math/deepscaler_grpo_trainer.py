@@ -47,7 +47,7 @@ def main(args):
             reward_fn=deepscaler_reward_fn,
             gconfig=config.gconfig,
             tokenizer=tokenizer,
-            enable_thinking=False,
+            enable_thinking=True,
             dump_dir=os.path.join(
                 StatsLogger.get_log_path(config.stats_logger), "generated"
             ),
@@ -56,7 +56,7 @@ def main(args):
             reward_fn=deepscaler_reward_fn,
             gconfig=config.gconfig.new(temperature=0.6),
             tokenizer=tokenizer,
-            enable_thinking=False,
+            enable_thinking=True,
             rollout_stat_scope="eval-rollout",
             dump_dir=os.path.join(
                 StatsLogger.get_log_path(config.stats_logger), "generated-eval"
